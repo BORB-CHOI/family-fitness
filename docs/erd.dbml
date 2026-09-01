@@ -1,0 +1,250 @@
+// 우리가족 체력키움 (family-fitness) — ERD
+// dbdiagram.io 에 그대로 붙여넣으세요
+// ADR-001에 따른 목표 ERD (아직 DB 마이그레이션으로 적용하지 않음)
+
+// ===== identity — 계정 · 가족 · 구성원 =====
+Table users {
+  id uuid [pk, default: `gen_random_uuid()`]
+  provider varchar(20) [not null]
+  provider_user_id varchar(191) [not null]
+  email varchar(255)
+  status varchar(20) [not null, default: `'ACTIVE'::character varying`]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  indexes { (provider,provider_user_id) [unique, name: 'uq_users_provider'] }
+}
+Table families {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(60) [not null]
+  region_code varchar(20)
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+Table profiles {
+  id uuid [pk, default: `gen_random_uuid()`]
+  family_id uuid [not null]
+  user_id uuid
+  display_name varchar(30) [not null]
+  birth_date date [not null]
+  sex varchar(6) [not null]
+  role varchar(10) [not null]
+  is_owner boolean [not null, default: `false`]
+  height_cm numeric(4,1)
+  weight_kg numeric(4,1)
+  support_mode varchar(20)
+  claim_code varchar(8)
+  claim_code_expires_at timestamptz
+  consent_personal_at timestamptz
+  consent_health_at timestamptz
+  consent_by_user_id uuid
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+Table cheers {
+  id uuid [pk, default: `gen_random_uuid()`]
+  family_id uuid [not null]
+  from_profile_id uuid [not null]
+  to_profile_id uuid [not null]
+  sticker_code varchar(20)
+  message varchar(200)
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// ===== fitness — 규준 · 측정 · 예측 =====
+Table fitness_norms {
+  id bigint [pk, default: `nextval('fitness_norms_id_seq'::regclass)`]
+  item varchar(30) [not null]
+  sex varchar(6) [not null]
+  age_from smallint [not null]
+  age_to smallint [not null]
+  percentile smallint [not null]
+  value numeric(8,3) [not null]
+  source_year smallint [not null]
+  indexes { (item,sex,age_from,age_to,percentile,source_year) [unique, name: 'uq_fitness_norm'] }
+}
+Table fitness_tests {
+  id uuid [pk, default: `gen_random_uuid()`]
+  profile_id uuid [not null]
+  measured_on date [not null]
+  source varchar(20) [not null]
+  age_at_test smallint [not null]
+  height_cm numeric(4,1)
+  weight_kg numeric(4,1)
+  created_at timestamptz [not null, default: `now()`]
+  indexes { (profile_id,measured_on) [unique, name: 'uq_fitness_test'] }
+}
+Table fitness_test_items {
+  fitness_test_id uuid [not null]
+  item varchar(30) [not null]
+  raw_value numeric(8,3) [not null]
+  percentile numeric(5,2)
+  grade varchar(10)
+  indexes { (fitness_test_id,item) [pk, name: 'pk_fitness_test_items'] }
+}
+Table predictions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  profile_id uuid [not null]
+  fitness_test_id uuid
+  model_version varchar(40) [not null]
+  created_at timestamptz [not null, default: `now()`]
+}
+Table prediction_points {
+  prediction_id uuid [not null]
+  scenario varchar(20) [not null]
+  item varchar(30) [not null]
+  years_from_now smallint [not null]
+  p10 numeric(8,3)
+  p50 numeric(8,3)
+  p90 numeric(8,3)
+  indexes { (prediction_id,scenario,item,years_from_now) [pk, name: 'pk_prediction_points'] }
+}
+
+// ===== activity — 활동 기록 =====
+Table activity_daily {
+  id uuid [pk, default: `gen_random_uuid()`]
+  profile_id uuid [not null]
+  activity_date date [not null]
+  source varchar(10) [not null]
+  steps int [not null, default: `0`]
+  active_minutes smallint [not null, default: `0`]
+  recorded_at timestamptz [not null, default: `now()`]
+  indexes { (profile_id,activity_date,source) [unique, name: 'uq_activity_daily'] }
+}
+
+// ===== coaching — 영상 · RAG · 코치 · 미션 =====
+Table exercise_videos {
+  id uuid [pk, default: `gen_random_uuid()`]
+  youtube_id varchar(32) [not null]
+  title varchar(300) [not null]
+  channel_name varchar(120) [not null]
+  channel_type varchar(20) [not null]
+  duration_sec smallint
+  age_from smallint [not null]
+  age_to smallint [not null]
+  target_item varchar(30)
+  intensity varchar(10) [not null]
+  space varchar(20) [not null]
+  noise varchar(10) [not null]
+  equipment varchar(60)
+  labeled_by varchar(20) [not null]
+  label_model varchar(40)
+  collected_at timestamptz [not null, default: `now()`]
+}
+Table video_interactions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  profile_id uuid [not null]
+  video_id uuid [not null]
+  kind varchar(10) [not null]
+  progress smallint [not null, default: `0`]
+  occurred_at timestamptz [not null, default: `now()`]
+  indexes { (profile_id,video_id,kind) [unique, name: 'uq_video_interaction'] }
+}
+Table vector_store {
+  id uuid [pk, default: `gen_random_uuid()`]
+  content text [not null]
+  kind varchar(30) [not null]
+  video_id uuid
+  fitness_item varchar(30)
+  age_from smallint
+  source varchar(200)
+  embedding vector(1536)
+}
+Table coach_runs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  family_id uuid [not null]
+  week_start date [not null]
+  trigger_type varchar(10) [not null]
+  status varchar(20) [not null, default: `'RUNNING'::character varying`]
+  summary text
+  approved_by uuid
+  approved_at timestamptz
+  rejected_reason varchar(300)
+  model_name varchar(40)
+  created_at timestamptz [not null, default: `now()`]
+  indexes { (family_id,week_start) [unique, name: 'uq_coach_run'] }
+}
+Table coach_run_proposal_items {
+  coach_run_id uuid [not null]
+  position smallint [not null]
+  title varchar(120) [not null]
+  description varchar(400)
+  target_metric varchar(20) [not null]
+  target_value int [not null]
+  video_id uuid
+  rationale varchar(400)
+  starts_on date [not null]
+  ends_on date [not null]
+  indexes { (coach_run_id,position) [pk, name: 'pk_coach_run_proposal_items'] }
+}
+Table missions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  family_id uuid [not null]
+  coach_run_id uuid
+  title varchar(120) [not null]
+  description varchar(400)
+  origin varchar(10) [not null]
+  target_metric varchar(20) [not null]
+  target_value int [not null]
+  video_id uuid
+  rationale varchar(400)
+  starts_on date [not null]
+  ends_on date [not null]
+  created_by uuid
+  created_at timestamptz [not null, default: `now()`]
+}
+Table mission_participants {
+  mission_id uuid [not null]
+  profile_id uuid [not null]
+  status varchar(20) [not null, default: `'PENDING'`]
+  progress smallint [not null, default: 0]
+  verified_by varchar(20)
+  verified_at timestamptz
+  confirmed_by_profile_id uuid
+  indexes { (mission_id,profile_id) [pk, name: 'pk_mission_participants'] }
+}
+Table coach_messages {
+  id uuid [pk, default: `gen_random_uuid()`]
+  conversation_id uuid [not null]
+  profile_id uuid [not null]
+  role varchar(10) [not null]
+  content text [not null]
+  created_at timestamptz [not null, default: `now()`]
+}
+Table coach_message_citations {
+  coach_message_id uuid [not null]
+  position smallint [not null]
+  vector_store_id uuid
+  source_label varchar(200) [not null]
+  excerpt varchar(500)
+  indexes { (coach_message_id,position) [pk, name: 'pk_coach_message_citations'] }
+}
+
+Ref: activity_daily.profile_id > profiles.id
+Ref: cheers.family_id > families.id
+Ref: cheers.from_profile_id > profiles.id
+Ref: cheers.to_profile_id > profiles.id
+Ref: coach_messages.profile_id > profiles.id
+Ref: coach_runs.family_id > families.id
+Ref: coach_runs.approved_by > profiles.id
+Ref: fitness_tests.profile_id > profiles.id
+Ref: fitness_test_items.fitness_test_id > fitness_tests.id
+Ref: missions.family_id > families.id
+Ref: missions.coach_run_id > coach_runs.id
+Ref: missions.video_id > exercise_videos.id
+Ref: missions.created_by > profiles.id
+Ref: predictions.profile_id > profiles.id
+Ref: predictions.fitness_test_id > fitness_tests.id
+Ref: prediction_points.prediction_id > predictions.id
+Ref: profiles.family_id > families.id
+Ref: profiles.user_id > users.id
+Ref: profiles.consent_by_user_id > users.id
+Ref: video_interactions.profile_id > profiles.id
+Ref: video_interactions.video_id > exercise_videos.id
+Ref: vector_store.video_id > exercise_videos.id
+Ref: coach_run_proposal_items.coach_run_id > coach_runs.id
+Ref: coach_run_proposal_items.video_id > exercise_videos.id
+Ref: mission_participants.mission_id > missions.id
+Ref: mission_participants.profile_id > profiles.id
+Ref: mission_participants.confirmed_by_profile_id > profiles.id
+Ref: coach_message_citations.coach_message_id > coach_messages.id
+Ref: coach_message_citations.vector_store_id > vector_store.id
