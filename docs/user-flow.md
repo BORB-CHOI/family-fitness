@@ -29,7 +29,7 @@ flowchart TD
     root["/ 스플래시"]
 
     root --> ob["/onboarding"]
-    ob --> ob1["/onboarding/login<br/>소셜 로그인"]
+    ob --> ob1["/onboarding/login<br/>OAuth 로그인"]
     ob --> ob2["/onboarding/family<br/>가족 만들기 + 내 프로필"]
     ob --> ob3["/onboarding/members<br/>구성원 추가"]
 
@@ -71,7 +71,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["엄마가 소셜 로그인"] --> B["가족 만들기<br/>+ 엄마 프로필 (PARENT, 계정 연결됨)"]
+    A["엄마가 OAuth 로그인"] --> B["가족 만들기<br/>+ 엄마 프로필 (PARENT, 계정 연결됨)"]
     B --> C{"구성원 추가"}
 
     C --> D["두 살 아이 프로필<br/>role=CHILD, user_id=null"]
@@ -99,6 +99,7 @@ flowchart TD
 
 | 상황 | 처리 |
 |---|---|
+| 아이디·비밀번호 가입 | 지원하지 않는다. OAuth 제공자 계정으로만 로그인한다 |
 | 부모 계정 하나로 전부 | 아무에게도 초대를 안 열면 된다. 프로필 여러 개를 한 계정이 관리 |
 | 두 살 아이 | 프로필만 존재. 측정 버튼이 화면에 안 뜬다 (`measurable=false`) |
 | 남편 나중에 합류 | 프로필 먼저 → 초대코드 → claim |
@@ -223,7 +224,7 @@ flowchart TD
     T2["수동 실행"] --> R
     R --> S1["step1 구성원·측정 로드"]
     S1 --> S2["step2 약점/강점 판정<br/>백분위 75 이상이면 강점 강화로 전환"]
-    S2 --> S3["step3 RAG — 영상 검색<br/>연령 · 소음 · 공간 필터"]
+    S2 --> S3["step3 Python AI 서비스 RAG — 영상 검색<br/>연령 · 소음 · 공간 필터"]
     S3 --> S4["step4 미션 편성 + 근거 작성"]
     S4 --> W["status = AWAITING_APPROVAL"]
 
@@ -252,7 +253,9 @@ flowchart TD
 
 ### 4.5 AI 운동 코치 질의응답 `/coach/chat` ○
 
-Agentic RAG. 답변마다 `citations` 에 근거를 남긴다 — 근거 없는 ASSISTANT 답변은 버그로 본다.
+별도 Python AI 서비스가 RAG 검색과 답변 생성을 담당한다. Spring Boot는 프로필·권한에 맞는
+검색 조건만 전달하고, 반환된 `ai_document_id`를 인용으로 저장한다. 답변마다 `citations` 에
+근거를 남긴다 — 근거 없는 ASSISTANT 답변은 버그로 본다.
 
 ```
 사용자: 우리 애가 유연성이 약한데 층간소음 없이 할 수 있는 운동 있어?
@@ -287,7 +290,7 @@ flowchart TD
 
 | 화면 | 메서드 · 경로 | 상태 |
 |---|---|---|
-| 개발용 로그인 | `POST /api/v1/auth/dev-token` | ● |
+| 개발 전용 토큰 발급 | `POST /api/v1/auth/dev-token` | ● 로컬 개발 프로필 전용; 운영 로그인 수단이 아님 |
 | 가족 만들기 | `POST /api/v1/families` | ● |
 | 구성원 추가 | `POST /api/v1/families/{id}/profiles` | ● |
 | 초대코드 열기 | `POST /api/v1/profiles/{id}/invite` | ● |

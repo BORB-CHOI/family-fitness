@@ -17,12 +17,15 @@ JSONB를 완전히 없애면서 14개 테이블을 유지할 수는 없다. 독�
 ## 결정
 
 1. 단일 Spring Boot 애플리케이션과 Spring Modulith의 `identity`, `fitness`, `activity`,
-   `coaching` 경계는 유지한다. 지금은 Gradle 서브프로젝트로 나누지 않는다.
+   `coaching` 경계는 유지한다. 지금은 Gradle 서브프로젝트로 나누지 않는다. Python AI 서비스는
+   별도 저장소·배포 단위로 둔다.
 2. 각 모듈을 `domain`, `application`, `adapter`로 점진적으로 옮긴다. 도메인은 Spring·JPA·HTTP에
    의존하지 않고, application은 포트만 의존하며, adapter만 Spring/JPA/웹/AI를 안다.
 3. JSONB 제거는 한 번의 재작성 대신 새 정규화 테이블을 추가하고 읽기 전환 후 기존 컬럼을 제거한다.
 4. `coach_runs.steps`는 업무 데이터가 아니라 관찰성 데이터이므로 애플리케이션 로그/추적으로 보낸다.
    영속하지 않아도 되는 데이터를 테이블로 바꾸지 않는다.
+5. PostgreSQL은 하나만 사용하고 `pgvector`를 설치한다. `ai_documents`의 임베딩 생성·검색은
+   Python AI 서비스가 담당하며, Spring Boot는 업무 데이터와 AI 결과의 승인·저장만 담당한다.
 
 ## JSONB별 결정
 
@@ -34,7 +37,7 @@ JSONB를 완전히 없애면서 14개 테이블을 유지할 수는 없다. 독�
 | `missions.participants` | 제거 | `mission_participants` | 참여자별 완료·검증·동시 업데이트가 독립적이다. `Mission`이 상태 변경을 제어한다. |
 | `coach_runs.proposal` | 제거 | `coach_run_proposal_items` | 승인 전 제안 항목은 Mission이 아니며, `CoachRun`에 귀속된다. 승인 시에만 Mission을 만든다. |
 | `coach_runs.steps` | 제거 | DB 저장 안 함 | LLM 도구 실행 이력은 로그/트레이스로 보낸다. |
-| `vector_store.metadata` | 제거 | 같은 테이블의 명시 컬럼 | `kind`, `video_id`, `item`, `age_from`, `source`는 검색 필터이므로 컬럼이 낫다. |
+| `vector_store.metadata` | 제거 | `ai_documents`의 명시 컬럼 | 문서 종류·영상·항목·연령·출처·임베딩 버전은 검색·재색인에 필요하므로 컬럼이 낫다. |
 | `coach_messages.citations` | 제거 | `coach_message_citations` | 인용 단위에 식별자·정렬·출처 검증이 필요하다. |
 
 결과는 **19개 테이블**이다. `cheers`, `activity_daily`, `video_interactions`는 실제 수명과
@@ -66,11 +69,15 @@ JSONB를 완전히 없애면서 14개 테이블을 유지할 수는 없다. 독�
     in/web/               # controller, request/response DTO
     in/scheduler/         # scheduled job
     out/persistence/      # JPA entity, Spring Data repository, mapper
-    out/ai/               # Spring AI, PgVector
+    out/ai/               # Python AI 서비스 HTTP 클라이언트
 ```
 
 도메인 객체는 `@Entity`, `@Service`, `JpaRepository`, `ResponseEntity`를 모른다. HTTP DTO와
 JPA 엔티티는 adapter에서만 쓰며, application은 도메인 명령과 포트를 조합한다.
+
+Python AI 서비스는 `ai_documents`에만 제한된 DB 역할로 접근한다. 코치 실행·미션·대화처럼
+사용자 상태를 바꾸는 테이블은 Spring Boot가 유일하게 쓴다. AI 서비스는 검색 결과와 생성안을
+반환하고, Spring Boot가 권한 검증과 트랜잭션 안에서 이를 저장한다.
 
 ## 전환 순서
 

@@ -30,14 +30,27 @@
 | `missions.participants` | `mission_participants` — 참여자별 완료·검증 |
 | `coach_runs.proposal` | `coach_run_proposal_items` — 승인 전 제안 항목 |
 | `coach_runs.steps` | 제거 — 애플리케이션 로그/trace |
-| `vector_store.metadata` | `vector_store`의 명시 컬럼 |
+| `vector_store.metadata` | `ai_documents`의 명시 컬럼 |
 | `coach_messages.citations` | `coach_message_citations` |
 
 이 설계의 이행 순서는 [DDD·헥사고날 전환 가이드](./ddd-hexagonal-guide.md)를 따릅니다.
 
+### AI 인덱스의 소유권
+
+PostgreSQL 데이터베이스는 하나만 사용하고 `pgvector` 확장을 함께 설치한다. 단, 이것이 Spring
+Boot가 AI·벡터 검색을 구현한다는 뜻은 아니다. Spring Boot는 가족·측정·코치 실행·미션처럼
+업무 데이터를 소유하고, 별도 Python AI 서비스가 `ai_documents`의 임베딩 생성과 RAG 검색을
+담당한다.
+
+Python 서비스에는 `ai_documents`와 `exercise_videos` 읽기 전용 권한에 한정된 DB 역할을 부여한다.
+`coach_runs`, `missions`, `coach_messages`의 생성·변경은 Python 서비스가 직접 쓰지 않고 Spring
+Boot API가 처리한다. AI 서비스는 검색 결과의 `ai_document_id`와 근거를 반환하고, Spring Boot가
+그 ID를 인용으로 저장한다.
+
 ## 모듈 의존
 
-Spring Modulith 모듈 경계 = ERD 묶음 = 백엔드 패키지. 셋이 1:1입니다.
+Spring Modulith 모듈 경계 = 업무 ERD 묶음 = 백엔드 패키지. 셋이 1:1입니다. `ai_documents`는
+Python AI 서비스가 사용하는 기술 인덱스라 이 업무 모듈 경계 밖에 둡니다.
 
 ```mermaid
 flowchart LR
@@ -53,6 +66,9 @@ flowchart LR
 ## 1. identity — 계정 · 가족 · 구성원
 
 계정(users)과 사람(profiles)을 나눈 게 핵심. 두 살 아이는 계정 없이 프로필로만 살고, 나중에 합류하는 남편은 미리 만들어 둔 프로필을 초대코드로 가져간다.
+
+`users`는 OAuth 전용 계정이다. `provider`와 `provider_user_id` 조합으로만 사용자를 식별하며,
+서비스 아이디·비밀번호나 비밀번호 해시 컬럼은 두지 않는다.
 
 ```mermaid
 erDiagram
@@ -181,7 +197,7 @@ erDiagram
     }
 ```
 
-## 4. coaching — 영상 · RAG · 코치 · 미션
+## 4. coaching — 영상 · AI 인덱스 · 코치 · 미션
 
 coach_runs.approved_at 이 NULL 인 동안에는 missions 가 단 한 건도 생기지 않는다. CoachApprovalGateTest 가 증명한다.
 
@@ -213,15 +229,20 @@ erDiagram
         smallint progress
         timestamptz occurred_at
     }
-    vector_store {
+    ai_documents {
         uuid id "PK"
         text content
-        varchar_30 kind
+        varchar_30 document_kind
         uuid video_id "FK"
         varchar_30 fitness_item
         smallint age_from
-        varchar_200 source
+        varchar_200 source_label
+        varchar_500 source_uri
+        char_64 content_hash
         vector_1536 embedding
+        varchar_80 embedding_model
+        varchar_40 embedding_version
+        timestamptz embedded_at
     }
     coach_runs {
         uuid id "PK"
@@ -284,7 +305,7 @@ erDiagram
     coach_message_citations {
         uuid coach_message_id "PK, FK"
         smallint position "PK"
-        uuid vector_store_id "FK"
+        uuid ai_document_id "FK"
         varchar_200 source_label
         varchar_500 excerpt
     }
@@ -293,8 +314,8 @@ erDiagram
     coach_runs ||--o{ coach_run_proposal_items : "coach_run_id"
     exercise_videos ||--o{ missions : "video_id"
     exercise_videos ||--o{ coach_run_proposal_items : "video_id"
-    exercise_videos ||--o{ vector_store : "video_id"
+    exercise_videos ||--o{ ai_documents : "video_id"
     missions ||--o{ mission_participants : "mission_id"
     coach_messages ||--o{ coach_message_citations : "coach_message_id"
-    vector_store ||--o{ coach_message_citations : "vector_store_id"
+    ai_documents ||--o{ coach_message_citations : "ai_document_id"
 ```
